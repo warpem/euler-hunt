@@ -1,0 +1,25 @@
+{
+  "name": "euler-hunt",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@warpem/mrc-parser": "^1.0.0",
+    "buffer": "^6.0.3",
+    "ndarray": "^1.0.19",
+    "ndarray-fft": "^1.0.3",
+    "ndarray-ops": "^1.2.2",
+    "zeros": "^1.0.0"
+  },
+  "devDependencies": {
+    "@types/ndarray": "^1.0.14",
+    "typescript": "^5.9.3",
+    "vite": "^7.3.1",
+    "vite-plugin-glsl": "^1.5.5"
+  }
+}
