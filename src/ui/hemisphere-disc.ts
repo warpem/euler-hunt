@@ -163,7 +163,7 @@ export function createHemisphereDisc(
     return { cx, cy, radius };
   }
 
-  function eventToDisc(e: MouseEvent) {
+  function eventToDisc(e: { clientX: number; clientY: number }) {
     const rect = canvas.getBoundingClientRect();
     const px = (e.clientX - rect.left) / rect.width * cssW;
     const py = (e.clientY - rect.top) / rect.height * cssH;
@@ -180,7 +180,7 @@ export function createHemisphereDisc(
     }
   }
 
-  function trySelect(e: MouseEvent) {
+  function trySelect(e: { clientX: number; clientY: number }) {
     const { x, y } = eventToDisc(e);
     selectCell(x, y);
   }
@@ -421,22 +421,24 @@ export function createHemisphereDisc(
     }
   }
 
-  // Document-level handlers for magnifier drag (attached/detached dynamically)
-  function onMagMove(e: MouseEvent) {
-    const { x, y } = eventToDisc(e);
+  // Shared magnifier drag logic
+  function handleMagMove(clientX: number, clientY: number) {
+    const { x, y } = eventToDisc({ clientX, clientY });
     logicalDiscPos.x += (x - prevMouseDisc.x) / zoom;
     logicalDiscPos.y += (y - prevMouseDisc.y) / zoom;
     prevMouseDisc = { x, y };
-    mouseClientPos = { x: e.clientX, y: e.clientY };
+    mouseClientPos = { x: clientX, y: clientY };
     positionMagCanvas();
     selectCell(logicalDiscPos.x, logicalDiscPos.y);
     hoveredCell = hitTest(logicalDiscPos.x, logicalDiscPos.y, asuGrid, gridSpacingDeg);
     redraw();
   }
 
-  function endMagDrag() {
-    document.removeEventListener('mousemove', onMagMove);
-    document.removeEventListener('mouseup', endMagDrag);
+  function handleMagEnd() {
+    document.removeEventListener('mousemove', onMagMouseMove);
+    document.removeEventListener('mouseup', onMagMouseUp);
+    document.removeEventListener('touchmove', onMagTouchMove);
+    document.removeEventListener('touchend', onMagTouchEnd);
     dragging = false;
     magnifierActive = false;
     removeMagCanvas();
@@ -444,48 +446,71 @@ export function createHemisphereDisc(
     redraw();
   }
 
-  canvas.addEventListener('mousedown', (e) => {
-    if (e.button === 0) {
-      dragging = true;
-      const { x, y } = eventToDisc(e);
-      if (magnifierEnabled) {
-        magnifierActive = true;
-        logicalDiscPos = { x, y };
-        prevMouseDisc = { x, y };
-        mouseClientPos = { x: e.clientX, y: e.clientY };
-        createMagCanvas();
-        positionMagCanvas();
-        canvas.style.cursor = 'none';
-        // Attach document-level listeners so drag continues outside canvas
-        document.addEventListener('mousemove', onMagMove);
-        document.addEventListener('mouseup', endMagDrag);
-      }
-      selectCell(x, y);
-      redraw();
+  function onMagMouseMove(e: MouseEvent) { handleMagMove(e.clientX, e.clientY); }
+  function onMagMouseUp() { handleMagEnd(); }
+  function onMagTouchMove(e: TouchEvent) { e.preventDefault(); handleMagMove(e.touches[0].clientX, e.touches[0].clientY); }
+  function onMagTouchEnd() { handleMagEnd(); }
+
+  function handleDown(clientX: number, clientY: number) {
+    dragging = true;
+    const { x, y } = eventToDisc({ clientX, clientY });
+    if (magnifierEnabled) {
+      magnifierActive = true;
+      logicalDiscPos = { x, y };
+      prevMouseDisc = { x, y };
+      mouseClientPos = { x: clientX, y: clientY };
+      createMagCanvas();
+      positionMagCanvas();
+      canvas.style.cursor = 'none';
+      document.addEventListener('mousemove', onMagMouseMove);
+      document.addEventListener('mouseup', onMagMouseUp);
+      document.addEventListener('touchmove', onMagTouchMove, { passive: false });
+      document.addEventListener('touchend', onMagTouchEnd);
     }
+    selectCell(x, y);
+    redraw();
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) handleDown(e.clientX, e.clientY);
+  }, { signal: ac.signal });
+
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    handleDown(e.touches[0].clientX, e.touches[0].clientY);
   }, { signal: ac.signal });
 
   canvas.addEventListener('mousemove', (e) => {
-    if (magnifierActive) return; // handled by document listener
-    if (dragging) {
-      trySelect(e);
-    }
+    if (magnifierActive) return;
+    if (dragging) trySelect(e);
     const { x, y } = eventToDisc(e);
     const cell = hitTest(x, y, asuGrid, gridSpacingDeg);
     const prev = hoveredCell;
     hoveredCell = cell;
-    if (prev?.q !== cell?.q || prev?.r !== cell?.r) {
-      redraw();
+    if (prev?.q !== cell?.q || prev?.r !== cell?.r) redraw();
+  }, { signal: ac.signal });
+
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (magnifierActive) return;
+    if (dragging) {
+      const t = e.touches[0];
+      trySelect({ clientX: t.clientX, clientY: t.clientY });
     }
   }, { signal: ac.signal });
 
   canvas.addEventListener('mouseup', () => {
-    if (magnifierActive) return; // handled by document listener
+    if (magnifierActive) return;
+    dragging = false;
+  }, { signal: ac.signal });
+
+  canvas.addEventListener('touchend', () => {
+    if (magnifierActive) return;
     dragging = false;
   }, { signal: ac.signal });
 
   canvas.addEventListener('mouseleave', () => {
-    if (magnifierActive) return; // drag continues outside canvas
+    if (magnifierActive) return;
     dragging = false;
     hoveredCell = null;
     redraw();
@@ -498,8 +523,10 @@ export function createHemisphereDisc(
     redraw,
     destroy: () => {
       ac.abort();
-      document.removeEventListener('mousemove', onMagMove);
-      document.removeEventListener('mouseup', endMagDrag);
+      document.removeEventListener('mousemove', onMagMouseMove);
+      document.removeEventListener('mouseup', onMagMouseUp);
+      document.removeEventListener('touchmove', onMagTouchMove);
+      document.removeEventListener('touchend', onMagTouchEnd);
       removeMagCanvas();
     },
   };

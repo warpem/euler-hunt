@@ -93,8 +93,8 @@ export function createPsiRing(
     magCanvas.style.top = `${mouseClientPos.y - magnifierRadiusCSS}px`;
   }
 
-  /** Get mouse position relative to ring center in CSS canvas coords. */
-  function eventToRingXY(e: MouseEvent): { x: number; y: number } {
+  /** Get pointer position relative to ring center in CSS canvas coords. */
+  function eventToRingXY(e: { clientX: number; clientY: number }): { x: number; y: number } {
     const rect = canvas.getBoundingClientRect();
     return {
       x: (e.clientX - rect.left) / rect.width * cssW - cssW / 2,
@@ -102,7 +102,7 @@ export function createPsiRing(
     };
   }
 
-  function eventToPsi(e: MouseEvent): number | null {
+  function eventToPsi(e: { clientX: number; clientY: number }): number | null {
     const rect = canvas.getBoundingClientRect();
     const px = (e.clientX - rect.left) / rect.width * cssW - cssW / 2;
     const py = (e.clientY - rect.top) / rect.height * cssH - cssH / 2;
@@ -125,7 +125,7 @@ export function createPsiRing(
     }
   }
 
-  function trySelect(e: MouseEvent) {
+  function trySelect(e: { clientX: number; clientY: number }) {
     const psi = eventToPsi(e);
     if (psi !== null && psi !== state.currentPsiDeg) {
       callbacks.onPsiSelected(psi);
@@ -330,24 +330,25 @@ export function createPsiRing(
     }
   }
 
-  // Document-level handlers for magnifier drag
-  function onMagMove(e: MouseEvent) {
-    const pos = eventToRingXY(e);
+  // Shared magnifier drag logic
+  function handleMagMove(clientX: number, clientY: number) {
+    const pos = eventToRingXY({ clientX, clientY });
     logicalPos.x += (pos.x - prevMousePos.x) / zoom;
     logicalPos.y += (pos.y - prevMousePos.y) / zoom;
     prevMousePos = pos;
-    // Derive angle from Cartesian position
     logicalAngle = Math.atan2(logicalPos.y, logicalPos.x) + Math.PI / 2;
     if (logicalAngle < 0) logicalAngle += 2 * Math.PI;
-    mouseClientPos = { x: e.clientX, y: e.clientY };
+    mouseClientPos = { x: clientX, y: clientY };
     positionMagCanvas();
     selectPsiAtAngle(logicalAngle);
     redraw();
   }
 
-  function endMagDrag() {
-    document.removeEventListener('mousemove', onMagMove);
-    document.removeEventListener('mouseup', endMagDrag);
+  function handleMagEnd() {
+    document.removeEventListener('mousemove', onMagMouseMove);
+    document.removeEventListener('mouseup', onMagMouseUp);
+    document.removeEventListener('touchmove', onMagTouchMove);
+    document.removeEventListener('touchend', onMagTouchEnd);
     dragging = false;
     magnifierActive = false;
     removeMagCanvas();
@@ -355,44 +356,70 @@ export function createPsiRing(
     redraw();
   }
 
-  canvas.addEventListener('mousedown', (e) => {
-    if (e.button === 0) {
-      dragging = true;
-      if (magnifierEnabled) {
-        magnifierActive = true;
-        const pos = eventToRingXY(e);
-        logicalPos = { x: pos.x, y: pos.y };
-        prevMousePos = { x: pos.x, y: pos.y };
-        logicalAngle = Math.atan2(pos.y, pos.x) + Math.PI / 2;
-        if (logicalAngle < 0) logicalAngle += 2 * Math.PI;
-        mouseClientPos = { x: e.clientX, y: e.clientY };
-        createMagCanvas();
-        positionMagCanvas();
-        canvas.style.cursor = 'none';
-        document.addEventListener('mousemove', onMagMove);
-        document.addEventListener('mouseup', endMagDrag);
-        selectPsiAtAngle(logicalAngle);
-      } else {
-        trySelect(e);
-      }
-      redraw();
+  function onMagMouseMove(e: MouseEvent) { handleMagMove(e.clientX, e.clientY); }
+  function onMagMouseUp() { handleMagEnd(); }
+  function onMagTouchMove(e: TouchEvent) { e.preventDefault(); handleMagMove(e.touches[0].clientX, e.touches[0].clientY); }
+  function onMagTouchEnd() { handleMagEnd(); }
+
+  function handleDown(clientX: number, clientY: number) {
+    dragging = true;
+    if (magnifierEnabled) {
+      magnifierActive = true;
+      const pos = eventToRingXY({ clientX, clientY });
+      logicalPos = { x: pos.x, y: pos.y };
+      prevMousePos = { x: pos.x, y: pos.y };
+      logicalAngle = Math.atan2(pos.y, pos.x) + Math.PI / 2;
+      if (logicalAngle < 0) logicalAngle += 2 * Math.PI;
+      mouseClientPos = { x: clientX, y: clientY };
+      createMagCanvas();
+      positionMagCanvas();
+      canvas.style.cursor = 'none';
+      document.addEventListener('mousemove', onMagMouseMove);
+      document.addEventListener('mouseup', onMagMouseUp);
+      document.addEventListener('touchmove', onMagTouchMove, { passive: false });
+      document.addEventListener('touchend', onMagTouchEnd);
+      selectPsiAtAngle(logicalAngle);
+    } else {
+      trySelect({ clientX, clientY });
     }
+    redraw();
+  }
+
+  canvas.addEventListener('mousedown', (e) => {
+    if (e.button === 0) handleDown(e.clientX, e.clientY);
+  }, { signal: ac.signal });
+
+  canvas.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    handleDown(e.touches[0].clientX, e.touches[0].clientY);
   }, { signal: ac.signal });
 
   canvas.addEventListener('mousemove', (e) => {
-    if (magnifierActive) return; // handled by document listener
+    if (magnifierActive) return;
+    if (dragging) trySelect(e);
+  }, { signal: ac.signal });
+
+  canvas.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    if (magnifierActive) return;
     if (dragging) {
-      trySelect(e);
+      const t = e.touches[0];
+      trySelect({ clientX: t.clientX, clientY: t.clientY });
     }
   }, { signal: ac.signal });
 
   canvas.addEventListener('mouseup', () => {
-    if (magnifierActive) return; // handled by document listener
+    if (magnifierActive) return;
+    dragging = false;
+  }, { signal: ac.signal });
+
+  canvas.addEventListener('touchend', () => {
+    if (magnifierActive) return;
     dragging = false;
   }, { signal: ac.signal });
 
   canvas.addEventListener('mouseleave', () => {
-    if (magnifierActive) return; // drag continues outside canvas
+    if (magnifierActive) return;
     dragging = false;
   }, { signal: ac.signal });
 
@@ -402,8 +429,10 @@ export function createPsiRing(
     redraw,
     destroy: () => {
       ac.abort();
-      document.removeEventListener('mousemove', onMagMove);
-      document.removeEventListener('mouseup', endMagDrag);
+      document.removeEventListener('mousemove', onMagMouseMove);
+      document.removeEventListener('mouseup', onMagMouseUp);
+      document.removeEventListener('touchmove', onMagTouchMove);
+      document.removeEventListener('touchend', onMagTouchEnd);
       removeMagCanvas();
     },
   };

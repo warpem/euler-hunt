@@ -64,7 +64,41 @@ export async function createGameScreen(
   levelConfig: LevelConfig,
   callbacks: GameScreenCallbacks,
 ): Promise<void> {
+  // Compute responsive canvas sizes
+  const vw = window.innerWidth;
+  const isMobile = vw <= 768;
+  // 24px padding + 16px gap + 4px borders + 8px buffer for projections
+  const projSize = isMobile ? Math.floor((vw - 52) / 2) : 384;
+  // 24px padding + 16px gap + 8px buffer for discs
+  const discSize = isMobile ? Math.floor((vw - 48) / 2) : 250;
+
   container.innerHTML = `
+    <style>
+      #gameTopBar { display: none; align-items: center; margin-bottom: 8px; }
+      #psiWrapper { text-align: center; }
+      @media (max-width: 768px) {
+        #gameTopBar { display: flex; }
+        .desktop-only { display: none !important; }
+        #targetCanvas, #playerCanvas,
+        #topDisc, #bottomDisc, #psiRing {
+          width: calc(50vw - 22px) !important;
+          height: calc(50vw - 22px) !important;
+        }
+        #controlsRow { row-gap: 0 !important; margin-top: 8px !important; }
+        #psiWrapper {
+          flex-basis: 100%;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          margin-top: -40px;
+        }
+        #buttonBar {
+          display: flex !important;
+          justify-content: center !important;
+          grid-template-columns: unset !important;
+        }
+      }
+    </style>
     <div id="loadingOverlay" style="
       display:flex; flex-direction:column; align-items:center; justify-content:center;
       min-height:80vh; gap:16px;
@@ -73,42 +107,49 @@ export async function createGameScreen(
       <p id="loadingStatus" style="color:var(--muted); font-size:14px">Loading volume...</p>
     </div>
     <div id="gameContent" style="display:none; text-align:center; padding:12px">
+      <div id="gameTopBar">
+        <button id="mobileBackBtn" style="
+          padding:8px 16px; font-size:14px; cursor:pointer;
+          background:var(--btn-secondary-bg); color:var(--btn-secondary-fg);
+          border:none; border-radius:6px; font-weight:bold;
+        ">\u2190 Menu</button>
+      </div>
       <h2 style="margin:0 auto 12px auto" id="levelTitle"></h2>
       <div style="display:flex; justify-content:center; gap:16px; flex-wrap:wrap; align-items:start">
         <div>
           <div style="margin-bottom:4px; font-size:13px; color:var(--muted)">Target</div>
           <canvas id="targetCanvas" width="1" height="1" style="
             border:1px solid var(--canvas-border); image-rendering:pixelated;
-            width:384px; height:384px;
+            width:${projSize}px; height:${projSize}px;
           "></canvas>
         </div>
         <div>
           <div style="margin-bottom:4px; font-size:13px; color:var(--muted)">Your projection</div>
           <canvas id="playerCanvas" width="1" height="1" style="
             border:1px solid var(--canvas-border); image-rendering:pixelated;
-            width:384px; height:384px; background:var(--bg);
+            width:${projSize}px; height:${projSize}px; background:var(--bg);
           "></canvas>
         </div>
       </div>
-      <div style="display:flex; justify-content:center; gap:16px; flex-wrap:wrap; align-items:start; margin-top:16px">
+      <div id="controlsRow" style="display:flex; justify-content:center; gap:16px; flex-wrap:wrap; align-items:start; margin-top:16px">
         <div>
           <div style="margin-bottom:4px; font-size:13px; color:var(--muted)">Top hemisphere</div>
-          <canvas id="topDisc" width="250" height="250" style="cursor:crosshair"></canvas>
+          <canvas id="topDisc" width="${discSize}" height="${discSize}" style="width:${discSize}px; height:${discSize}px; cursor:crosshair"></canvas>
         </div>
         <div>
           <div style="margin-bottom:4px; font-size:13px; color:var(--muted)">Bottom hemisphere</div>
-          <canvas id="bottomDisc" width="250" height="250" style="cursor:crosshair"></canvas>
+          <canvas id="bottomDisc" width="${discSize}" height="${discSize}" style="width:${discSize}px; height:${discSize}px; cursor:crosshair"></canvas>
         </div>
-        <div>
+        <div id="psiWrapper">
           <div style="margin-bottom:4px; font-size:13px; color:var(--muted)">Psi (in-plane)</div>
-          <canvas id="psiRing" width="250" height="250" style="cursor:crosshair"></canvas>
+          <canvas id="psiRing" width="${discSize}" height="${discSize}" style="width:${discSize}px; height:${discSize}px; cursor:crosshair"></canvas>
         </div>
       </div>
       <div style="margin-top:8px; font-family:monospace; font-size:13px; color:var(--muted)" id="anglesDisplay">
-        rot=— tilt=— psi=—
+        rot=\u2014 tilt=\u2014 psi=\u2014
       </div>
-      <div style="display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin:16px auto 0; max-width:784px">
-        <button id="backToMenuBtn" style="
+      <div id="buttonBar" style="display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin:16px auto 0; max-width:784px">
+        <button id="backToMenuBtn" class="desktop-only" style="
           justify-self:start;
           padding:10px 32px; font-size:16px; cursor:pointer;
           background:var(--btn-secondary-bg); color:var(--btn-secondary-fg);
@@ -141,8 +182,10 @@ export async function createGameScreen(
   const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
   const titleEl = document.getElementById('levelTitle')!;
   const backToMenuBtn = document.getElementById('backToMenuBtn') as HTMLButtonElement;
+  const mobileBackBtn = document.getElementById('mobileBackBtn') as HTMLButtonElement;
 
   backToMenuBtn.addEventListener('click', () => callbacks.onBack());
+  mobileBackBtn.addEventListener('click', () => callbacks.onBack());
 
   // Load volume
   loadingStatus.textContent = 'Loading volume...';
