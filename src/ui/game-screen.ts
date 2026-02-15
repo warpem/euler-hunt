@@ -115,12 +115,10 @@ export async function createGameScreen(
       <div style="display:flex; gap:12px; justify-content:center; margin-top:16px">
         <button id="subdivideBtn" style="
           padding:10px 32px; font-size:16px; cursor:pointer;
-          background:var(--btn-secondary-bg); color:var(--btn-secondary-fg);
           border:none; border-radius:6px; font-weight:bold;
         ">Subdivide</button>
         <button id="submitBtn" style="
           padding:10px 32px; font-size:16px; cursor:pointer;
-          background:var(--btn-primary-bg); color:var(--btn-primary-fg);
           border:none; border-radius:6px; font-weight:bold;
         ">Submit</button>
       </div>
@@ -228,7 +226,19 @@ export async function createGameScreen(
     const stepNum = state.subdivisionIndex + 1;
     const spacing = state.currentStep.angularSpacingDeg;
     subdivisionInfo.textContent = `Step ${stepNum}/${SUBDIVISION_STEPS.length} \u2014 ${spacing}\u00b0`;
-    subdivideBtn.style.display = state.canSubdivide ? '' : 'none';
+
+    const canSub = state.canSubdivide;
+    subdivideBtn.disabled = !canSub;
+    subdivideBtn.style.background = canSub ? 'var(--btn-primary-bg)' : 'var(--btn-secondary-bg)';
+    subdivideBtn.style.color = canSub ? 'var(--btn-primary-fg)' : 'var(--btn-secondary-fg)';
+    subdivideBtn.style.cursor = canSub ? 'pointer' : 'default';
+    subdivideBtn.style.opacity = canSub ? '1' : '0.5';
+
+    submitBtn.disabled = canSub;
+    submitBtn.style.background = canSub ? 'var(--btn-secondary-bg)' : 'var(--btn-primary-bg)';
+    submitBtn.style.color = canSub ? 'var(--btn-secondary-fg)' : 'var(--btn-primary-fg)';
+    submitBtn.style.cursor = canSub ? 'default' : 'pointer';
+    submitBtn.style.opacity = canSub ? '0.5' : '1';
   }
 
   function selectCell(cell: HexCell) {
