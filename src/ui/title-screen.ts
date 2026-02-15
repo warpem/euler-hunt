@@ -17,6 +17,7 @@ export function createTitleScreen(
       <img src="${base}euler_image.jpg" alt="" style="
         position:absolute; inset:0; width:100%; height:100%;
         object-fit:cover; z-index:0; pointer-events:none;
+        image-rendering:pixelated;
       " />
       <div style="position:relative; z-index:1; text-shadow:0 2px 12px rgba(0,0,0,0.7)">
         <h1 style="font-size:48px; margin-bottom:8px; letter-spacing:2px; color:#fff">EULER HUNT</h1>
