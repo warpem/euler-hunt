@@ -16,6 +16,7 @@ import { SUBDIVISION_STEPS, type LevelConfig } from '../game/campaign';
 
 export interface GameScreenCallbacks {
   onSubmit(result: ScoreResult): void;
+  onBack(): void;
 }
 
 /**
@@ -72,13 +73,7 @@ export async function createGameScreen(
       <p id="loadingStatus" style="color:var(--muted); font-size:14px">Loading volume...</p>
     </div>
     <div id="gameContent" style="display:none; text-align:center; padding:12px">
-      <div style="display:flex; justify-content:space-between; align-items:center; max-width:900px; margin:0 auto 12px auto">
-        <h2 style="margin:0" id="levelTitle"></h2>
-        <span id="nccDisplay" style="font-family:monospace; font-size:18px">NCC: —</span>
-      </div>
-      <div id="subdivisionInfo" style="max-width:900px; margin:0 auto 8px auto; font-family:monospace; font-size:13px; color:var(--muted)">
-        Step 1/${SUBDIVISION_STEPS.length} — 30°
-      </div>
+      <h2 style="margin:0 auto 12px auto" id="levelTitle"></h2>
       <div style="display:flex; justify-content:center; gap:16px; flex-wrap:wrap; align-items:start">
         <div>
           <div style="margin-bottom:4px; font-size:13px; color:var(--muted)">Target</div>
@@ -112,15 +107,23 @@ export async function createGameScreen(
       <div style="margin-top:8px; font-family:monospace; font-size:13px; color:var(--muted)" id="anglesDisplay">
         rot=— tilt=— psi=—
       </div>
-      <div style="display:flex; gap:12px; justify-content:center; margin-top:16px">
-        <button id="subdivideBtn" style="
+      <div style="display:grid; grid-template-columns:1fr auto 1fr; align-items:center; margin:16px auto 0; max-width:784px">
+        <button id="backToMenuBtn" style="
+          justify-self:start;
           padding:10px 32px; font-size:16px; cursor:pointer;
+          background:var(--btn-secondary-bg); color:var(--btn-secondary-fg);
           border:none; border-radius:6px; font-weight:bold;
-        ">Subdivide</button>
-        <button id="submitBtn" style="
-          padding:10px 32px; font-size:16px; cursor:pointer;
-          border:none; border-radius:6px; font-weight:bold;
-        ">Submit</button>
+        ">\u2190 Menu</button>
+        <div style="display:flex; gap:12px">
+          <button id="subdivideBtn" style="
+            padding:10px 32px; font-size:16px; cursor:pointer;
+            border:none; border-radius:6px; font-weight:bold;
+          ">Subdivide</button>
+          <button id="submitBtn" style="
+            padding:10px 32px; font-size:16px; cursor:pointer;
+            border:none; border-radius:6px; font-weight:bold;
+          ">Submit</button>
+        </div>
       </div>
     </div>
   `;
@@ -133,14 +136,13 @@ export async function createGameScreen(
   const topDiscEl = document.getElementById('topDisc') as HTMLCanvasElement;
   const bottomDiscEl = document.getElementById('bottomDisc') as HTMLCanvasElement;
   const psiRingEl = document.getElementById('psiRing') as HTMLCanvasElement;
-  const nccDisplay = document.getElementById('nccDisplay')!;
   const anglesDisplay = document.getElementById('anglesDisplay')!;
-  const subdivisionInfo = document.getElementById('subdivisionInfo')!;
   const subdivideBtn = document.getElementById('subdivideBtn') as HTMLButtonElement;
   const submitBtn = document.getElementById('submitBtn') as HTMLButtonElement;
   const titleEl = document.getElementById('levelTitle')!;
+  const backToMenuBtn = document.getElementById('backToMenuBtn') as HTMLButtonElement;
 
-  titleEl.textContent = `${levelConfig.name} (${levelConfig.symmetry})`;
+  backToMenuBtn.addEventListener('click', () => callbacks.onBack());
 
   // Load volume
   loadingStatus.textContent = 'Loading volume...';
@@ -225,7 +227,7 @@ export async function createGameScreen(
   function updateSubdivisionUI() {
     const stepNum = state.subdivisionIndex + 1;
     const spacing = state.currentStep.angularSpacingDeg;
-    subdivisionInfo.textContent = `Step ${stepNum}/${SUBDIVISION_STEPS.length} \u2014 ${spacing}\u00b0`;
+    titleEl.textContent = `${levelConfig.name} (${levelConfig.symmetry}): Step ${stepNum}/${SUBDIVISION_STEPS.length} \u2014 ${spacing}\u00b0`;
 
     const canSub = state.canSubdivide;
     subdivideBtn.disabled = !canSub;
@@ -292,7 +294,7 @@ export async function createGameScreen(
     displayProjection(playerCanvas, playerImage, originalSize);
 
     const nccValue = ncc(currentTargetDisplayed, playerImage);
-    nccDisplay.textContent = `NCC: ${nccValue.toFixed(3)}`;
+    psiRing.nccText = nccValue.toFixed(3);
 
     state.explore(state.currentCell, state.currentPsiDeg, nccValue);
 

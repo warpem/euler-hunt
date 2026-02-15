@@ -141,7 +141,7 @@ export function createScoreScreen(
           padding:12px 36px; font-size:16px; cursor:pointer;
           background:var(--btn-secondary-bg); color:var(--btn-secondary-fg);
           border:none; border-radius:6px; font-weight:bold;
-        ">Back to Title</button>
+        ">Back to Menu</button>
       </div>
     </div>
   `;

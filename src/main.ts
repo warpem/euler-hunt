@@ -25,6 +25,7 @@ function showTitle() {
 async function startLevel(config: LevelConfig) {
   try {
     await createGameScreen(app, config, {
+      onBack: showTitle,
       onSubmit: (result) => {
         const isCampaign = campaignLevels.some((l) => l === config);
         const hasNext = isCampaign && currentLevel < campaignLevels.length - 1;

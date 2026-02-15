@@ -1,4 +1,5 @@
 import { createHexGrid, hitTest, cellVertices, type HexCell } from '../core/hex-grid';
+import { discToSphere } from '../core/lambert';
 import { isInAsymmetricUnit } from '../core/symmetry';
 import type { GameState } from '../game/state';
 
@@ -37,6 +38,50 @@ function isDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+/**
+ * Compute the ASU boundary as a polygon in disc coordinates ([-1,1]).
+ * Uses radial scanning + binary search from the pole outward.
+ * Returns null if the full disc is the ASU (C1) or the pole isn't in the ASU.
+ */
+function computeAsuBoundary(isTop: boolean, symmetry: string): [number, number][] | null {
+  if (symmetry.toUpperCase() === 'C1') return null;
+
+  // If the disc center (pole) is not in the ASU, skip clipping
+  const { rot: cRot, tilt: cTilt } = discToSphere(0, 0, isTop);
+  if (!isInAsymmetricUnit(cRot, cTilt, symmetry)) return null;
+
+  const n = 720;
+  const points: [number, number][] = [];
+
+  for (let i = 0; i <= n; i++) {
+    const angle = (2 * Math.PI * i) / n;
+    const dx = Math.cos(angle);
+    const dy = Math.sin(angle);
+
+    // Check if the disc edge in this direction is in the ASU
+    const { rot: eRot, tilt: eTilt } = discToSphere(dx * 0.999, dy * 0.999, isTop);
+    if (isInAsymmetricUnit(eRot, eTilt, symmetry)) {
+      points.push([dx, dy]);
+      continue;
+    }
+
+    // Binary search for the boundary radius
+    let lo = 0, hi = 1;
+    for (let iter = 0; iter < 24; iter++) {
+      const mid = (lo + hi) / 2;
+      const { rot, tilt } = discToSphere(dx * mid, dy * mid, isTop);
+      if (isInAsymmetricUnit(rot, tilt, symmetry)) {
+        lo = mid;
+      } else {
+        hi = mid;
+      }
+    }
+    points.push([dx * lo, dy * lo]);
+  }
+
+  return points;
+}
+
 export function createHemisphereDisc(
   canvas: HTMLCanvasElement,
   gridSpacingDeg: number,
@@ -45,63 +90,123 @@ export function createHemisphereDisc(
   state: GameState,
   callbacks: DiscCallbacks,
 ): HemisphereDisc {
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.style.width ? parseInt(canvas.style.width) : canvas.width;
+  const cssH = canvas.style.height ? parseInt(canvas.style.height) : canvas.height;
+  canvas.width = cssW * dpr;
+  canvas.height = cssH * dpr;
+  canvas.style.width = `${cssW}px`;
+  canvas.style.height = `${cssH}px`;
+
   const grid = createHexGrid(gridSpacingDeg, isTop);
-  const asuGrid = grid.filter((c) => isInAsymmetricUnit(c.rot, c.tilt, symmetry));
+  const asuGrid = grid.filter((c) => {
+    if (isInAsymmetricUnit(c.rot, c.tilt, symmetry)) return true;
+    // Include boundary cells: keep if any vertex maps into the ASU
+    const verts = cellVertices(c, gridSpacingDeg);
+    return verts.some(([vx, vy]) => {
+      if (vx * vx + vy * vy > 1.0) return false;
+      const { rot, tilt } = discToSphere(vx, vy, isTop);
+      return isInAsymmetricUnit(rot, tilt, symmetry);
+    });
+  });
+  const asuBoundary = computeAsuBoundary(isTop, symmetry);
   let hoveredCell: HexCell | null = null;
   let dragging = false;
   const ac = new AbortController();
 
+  // Magnifier constants and state
+  const zoom = 30 / gridSpacingDeg;
+  const magnifierEnabled = zoom > 1;
+  const magnifierRadiusCSS = 80;
+  const angSpacingRad = (gridSpacingDeg * Math.PI) / 180;
+  const hexSize = angSpacingRad * 0.65;
+  let magnifierActive = false;
+  let logicalDiscPos = { x: 0, y: 0 };
+  let mouseClientPos = { x: 0, y: 0 };
+  let prevMouseDisc = { x: 0, y: 0 };
+
+  // Floating magnifier overlay canvas
+  let magCanvas: HTMLCanvasElement | null = null;
+
+  function createMagCanvas(): HTMLCanvasElement {
+    const mc = document.createElement('canvas');
+    const size = magnifierRadiusCSS * 2;
+    mc.width = size * dpr;
+    mc.height = size * dpr;
+    mc.style.width = `${size}px`;
+    mc.style.height = `${size}px`;
+    mc.style.position = 'fixed';
+    mc.style.pointerEvents = 'none';
+    mc.style.zIndex = '9999';
+    document.body.appendChild(mc);
+    magCanvas = mc;
+    return mc;
+  }
+
+  function removeMagCanvas() {
+    if (magCanvas) {
+      magCanvas.remove();
+      magCanvas = null;
+    }
+  }
+
+  function positionMagCanvas() {
+    if (!magCanvas) return;
+    magCanvas.style.left = `${mouseClientPos.x - magnifierRadiusCSS}px`;
+    magCanvas.style.top = `${mouseClientPos.y - magnifierRadiusCSS}px`;
+  }
+
   function discLayout() {
-    const radius = Math.min(canvas.width, canvas.height) / 2 - 4;
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
+    const radius = Math.min(cssW, cssH) / 2 - 4;
+    const cx = cssW / 2;
+    const cy = cssH / 2;
     return { cx, cy, radius };
   }
 
   function eventToDisc(e: MouseEvent) {
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    const px = (e.clientX - rect.left) * scaleX;
-    const py = (e.clientY - rect.top) * scaleY;
+    const px = (e.clientX - rect.left) / rect.width * cssW;
+    const py = (e.clientY - rect.top) / rect.height * cssH;
     const { cx, cy, radius } = discLayout();
     const x = (px - cx) / radius;
     const y = -(py - cy) / radius;
     return { x, y };
   }
 
-  function trySelect(e: MouseEvent) {
-    const { x, y } = eventToDisc(e);
-    const cell = hitTest(x, y, asuGrid, gridSpacingDeg);
+  function selectCell(discX: number, discY: number) {
+    const cell = hitTest(discX, discY, asuGrid, gridSpacingDeg);
     if (cell && !(state.currentCell?.q === cell.q && state.currentCell?.r === cell.r && state.currentCell?.isTop === cell.isTop)) {
       callbacks.onCellSelected(cell);
     }
   }
 
-  function redraw() {
-    const ctx = canvas.getContext('2d')!;
-    const w = canvas.width, h = canvas.height;
-    const { cx, cy, radius } = discLayout();
-    const dark = isDark();
+  function trySelect(e: MouseEvent) {
+    const { x, y } = eventToDisc(e);
+    selectCell(x, y);
+  }
 
-    ctx.clearRect(0, 0, w, h);
-
-    // Clip to disc circle
-    ctx.save();
-    ctx.beginPath();
-    ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
-    ctx.clip();
-
+  /** Draw hex cells with configurable transform for normal and magnifier views. */
+  function drawCells(
+    ctx: CanvasRenderingContext2D,
+    cells: HexCell[],
+    centerX: number,
+    centerY: number,
+    radius: number,
+    offsetX: number,
+    offsetY: number,
+    scale: number,
+    dark: boolean,
+    forceOutlines: boolean,
+  ) {
     const hasRange = state.nccMin < state.nccMax;
     const range = state.nccMax - state.nccMin || 1;
 
-    // Only draw ASU cells
-    for (const cell of asuGrid) {
+    for (const cell of cells) {
       const verts = cellVertices(cell, gridSpacingDeg);
       ctx.beginPath();
       for (let i = 0; i < verts.length; i++) {
-        const px = cx + verts[i][0] * radius;
-        const py = cy - verts[i][1] * radius;
+        const px = centerX + (verts[i][0] - offsetX) * scale * radius;
+        const py = centerY - (verts[i][1] - offsetY) * scale * radius;
         if (i === 0) ctx.moveTo(px, py);
         else ctx.lineTo(px, py);
       }
@@ -131,10 +236,11 @@ export function createHemisphereDisc(
         ctx.fill();
       }
 
-      // Cell outline
-      ctx.strokeStyle = dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)';
-      ctx.lineWidth = 0.5;
-      ctx.stroke();
+      if (forceOutlines || gridSpacingDeg > 2) {
+        ctx.strokeStyle = dark ? 'rgba(255,255,255,0.35)' : 'rgba(0,0,0,0.25)';
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
 
       if (isSelected) {
         ctx.strokeStyle = dark ? '#fff' : '#000';
@@ -142,25 +248,225 @@ export function createHemisphereDisc(
         ctx.stroke();
       }
     }
+  }
+
+  /** Render the magnifier content into the floating overlay canvas. */
+  function drawMagnifier(dark: boolean) {
+    const mc = magCanvas;
+    if (!mc) return;
+    const mctx = mc.getContext('2d')!;
+    mctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const size = magnifierRadiusCSS * 2;
+    const mcx = magnifierRadiusCSS;
+    const mcy = magnifierRadiusCSS;
+    const magR = magnifierRadiusCSS;
+    const { radius } = discLayout();
+
+    mctx.clearRect(0, 0, size, size);
+
+    // Clip to circle
+    mctx.save();
+    mctx.beginPath();
+    mctx.arc(mcx, mcy, magR, 0, 2 * Math.PI);
+    mctx.clip();
+
+    // Fill background
+    mctx.fillStyle = dark ? '#1a1a1a' : '#f8f8f8';
+    mctx.fillRect(0, 0, size, size);
+
+    // Sub-clip to transformed ASU boundary (or disc circle)
+    mctx.beginPath();
+    if (asuBoundary) {
+      mctx.moveTo(
+        mcx + (asuBoundary[0][0] - logicalDiscPos.x) * zoom * radius,
+        mcy - (asuBoundary[0][1] - logicalDiscPos.y) * zoom * radius,
+      );
+      for (let i = 1; i < asuBoundary.length; i++) {
+        mctx.lineTo(
+          mcx + (asuBoundary[i][0] - logicalDiscPos.x) * zoom * radius,
+          mcy - (asuBoundary[i][1] - logicalDiscPos.y) * zoom * radius,
+        );
+      }
+      mctx.closePath();
+    } else {
+      mctx.arc(
+        mcx - logicalDiscPos.x * zoom * radius,
+        mcy + logicalDiscPos.y * zoom * radius,
+        radius * zoom,
+        0, 2 * Math.PI,
+      );
+    }
+    mctx.clip();
+
+    // Draw zoomed cells (only those near the logical position)
+    const viewRadius = magR / (radius * zoom) + hexSize * 2;
+    const viewR2 = (viewRadius + hexSize) * (viewRadius + hexSize);
+    const nearbyCells = asuGrid.filter((c) => {
+      const dx = c.cx - logicalDiscPos.x;
+      const dy = c.cy - logicalDiscPos.y;
+      return dx * dx + dy * dy < viewR2;
+    });
+    drawCells(mctx, nearbyCells, mcx, mcy, radius, logicalDiscPos.x, logicalDiscPos.y, zoom, dark, true);
+
+    mctx.restore(); // remove circle + ASU clip
+
+    // Draw transformed borders (re-clip to circle only)
+    mctx.save();
+    mctx.beginPath();
+    mctx.arc(mcx, mcy, magR, 0, 2 * Math.PI);
+    mctx.clip();
+
+    // Disc border (transformed)
+    mctx.strokeStyle = dark ? '#555' : '#bbb';
+    mctx.lineWidth = 1.5;
+    mctx.beginPath();
+    mctx.arc(
+      mcx - logicalDiscPos.x * zoom * radius,
+      mcy + logicalDiscPos.y * zoom * radius,
+      radius * zoom,
+      0, 2 * Math.PI,
+    );
+    mctx.stroke();
+
+    // ASU boundary (transformed)
+    if (asuBoundary) {
+      mctx.strokeStyle = dark ? '#888' : '#999';
+      mctx.lineWidth = 1;
+      mctx.beginPath();
+      mctx.moveTo(
+        mcx + (asuBoundary[0][0] - logicalDiscPos.x) * zoom * radius,
+        mcy - (asuBoundary[0][1] - logicalDiscPos.y) * zoom * radius,
+      );
+      for (let i = 1; i < asuBoundary.length; i++) {
+        mctx.lineTo(
+          mcx + (asuBoundary[i][0] - logicalDiscPos.x) * zoom * radius,
+          mcy - (asuBoundary[i][1] - logicalDiscPos.y) * zoom * radius,
+        );
+      }
+      mctx.closePath();
+      mctx.stroke();
+    }
+
+    mctx.restore(); // remove circle clip
+
+    // Magnifier rim
+    mctx.strokeStyle = dark ? '#888' : '#555';
+    mctx.lineWidth = 2.5;
+    mctx.beginPath();
+    mctx.arc(mcx, mcy, magR - 1.5, 0, 2 * Math.PI);
+    mctx.stroke();
+
+    // Crosshair at center
+    mctx.strokeStyle = dark ? 'rgba(255,255,255,0.6)' : 'rgba(0,0,0,0.5)';
+    mctx.lineWidth = 1;
+    const ch = 8;
+    mctx.beginPath();
+    mctx.moveTo(mcx - ch, mcy); mctx.lineTo(mcx + ch, mcy);
+    mctx.moveTo(mcx, mcy - ch); mctx.lineTo(mcx, mcy + ch);
+    mctx.stroke();
+  }
+
+  function redraw() {
+    const ctx = canvas.getContext('2d')!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const { cx, cy, radius } = discLayout();
+    const dark = isDark();
+
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    // Clip to ASU boundary (or full disc if no boundary)
+    ctx.save();
+    ctx.beginPath();
+    if (asuBoundary) {
+      ctx.moveTo(cx + asuBoundary[0][0] * radius, cy - asuBoundary[0][1] * radius);
+      for (let i = 1; i < asuBoundary.length; i++) {
+        ctx.lineTo(cx + asuBoundary[i][0] * radius, cy - asuBoundary[i][1] * radius);
+      }
+      ctx.closePath();
+    } else {
+      ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
+    }
+    ctx.clip();
+
+    // Draw all ASU cells (normal view)
+    drawCells(ctx, asuGrid, cx, cy, radius, 0, 0, 1, dark, false);
 
     ctx.restore(); // remove clip
 
-    // Draw disc border on top
+    // Always draw disc border
     ctx.strokeStyle = dark ? '#555' : '#bbb';
     ctx.lineWidth = 1.5;
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, 2 * Math.PI);
     ctx.stroke();
+
+    // Draw ASU boundary on top if it differs from the disc
+    if (asuBoundary) {
+      ctx.strokeStyle = dark ? '#888' : '#999';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(cx + asuBoundary[0][0] * radius, cy - asuBoundary[0][1] * radius);
+      for (let i = 1; i < asuBoundary.length; i++) {
+        ctx.lineTo(cx + asuBoundary[i][0] * radius, cy - asuBoundary[i][1] * radius);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+
+    // Dim the main canvas when magnifier is active
+    if (magnifierActive) {
+      ctx.fillStyle = dark ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.15)';
+      ctx.fillRect(0, 0, cssW, cssH);
+      drawMagnifier(dark);
+    }
+  }
+
+  // Document-level handlers for magnifier drag (attached/detached dynamically)
+  function onMagMove(e: MouseEvent) {
+    const { x, y } = eventToDisc(e);
+    logicalDiscPos.x += (x - prevMouseDisc.x) / zoom;
+    logicalDiscPos.y += (y - prevMouseDisc.y) / zoom;
+    prevMouseDisc = { x, y };
+    mouseClientPos = { x: e.clientX, y: e.clientY };
+    positionMagCanvas();
+    selectCell(logicalDiscPos.x, logicalDiscPos.y);
+    hoveredCell = hitTest(logicalDiscPos.x, logicalDiscPos.y, asuGrid, gridSpacingDeg);
+    redraw();
+  }
+
+  function endMagDrag() {
+    document.removeEventListener('mousemove', onMagMove);
+    document.removeEventListener('mouseup', endMagDrag);
+    dragging = false;
+    magnifierActive = false;
+    removeMagCanvas();
+    canvas.style.cursor = '';
+    redraw();
   }
 
   canvas.addEventListener('mousedown', (e) => {
     if (e.button === 0) {
       dragging = true;
-      trySelect(e);
+      const { x, y } = eventToDisc(e);
+      if (magnifierEnabled) {
+        magnifierActive = true;
+        logicalDiscPos = { x, y };
+        prevMouseDisc = { x, y };
+        mouseClientPos = { x: e.clientX, y: e.clientY };
+        createMagCanvas();
+        positionMagCanvas();
+        canvas.style.cursor = 'none';
+        // Attach document-level listeners so drag continues outside canvas
+        document.addEventListener('mousemove', onMagMove);
+        document.addEventListener('mouseup', endMagDrag);
+      }
+      selectCell(x, y);
+      redraw();
     }
   }, { signal: ac.signal });
 
   canvas.addEventListener('mousemove', (e) => {
+    if (magnifierActive) return; // handled by document listener
     if (dragging) {
       trySelect(e);
     }
@@ -174,10 +480,12 @@ export function createHemisphereDisc(
   }, { signal: ac.signal });
 
   canvas.addEventListener('mouseup', () => {
+    if (magnifierActive) return; // handled by document listener
     dragging = false;
   }, { signal: ac.signal });
 
   canvas.addEventListener('mouseleave', () => {
+    if (magnifierActive) return; // drag continues outside canvas
     dragging = false;
     hoveredCell = null;
     redraw();
@@ -188,6 +496,11 @@ export function createHemisphereDisc(
     grid: asuGrid,
     isTop,
     redraw,
-    destroy: () => ac.abort(),
+    destroy: () => {
+      ac.abort();
+      document.removeEventListener('mousemove', onMagMove);
+      document.removeEventListener('mouseup', endMagDrag);
+      removeMagCanvas();
+    },
   };
 }

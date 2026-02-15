@@ -42,7 +42,7 @@ export const campaignLevels: LevelConfig[] = [
     mapUrl: `${base}emd_72471_galactosidase_128.mrc`,
   },
   {
-    name: 'Ribosome 80S',
+    name: '80S Ribosome',
     symmetry: 'C1',
     defocus: 2.0,
     snr: 0.3,

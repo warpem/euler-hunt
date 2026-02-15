@@ -56,12 +56,13 @@ export function createHexGrid(angularSpacingDeg: number, isTop: boolean): HexCel
       const cx = hexSize * (3 / 2) * q;
       const cy = hexSize * (Math.sqrt(3) / 2 * q + Math.sqrt(3) * r);
 
-      // Only keep cells inside the unit disc (with a small margin for the hex radius)
+      // Keep cells that overlap the unit disc (center may be slightly outside)
       const dist = Math.sqrt(cx * cx + cy * cy);
-      if (dist > 1.0) continue;
+      if (dist > 1.0 + hexSize) continue;
 
-      // Map disc position to sphere angles
-      const { rot, tilt } = discToSphere(cx, cy, isTop);
+      // Map disc position to sphere angles (clamp to disc for border cells)
+      const clamp = dist > 1.0 ? 1.0 / dist : 1;
+      const { rot, tilt } = discToSphere(cx * clamp, cy * clamp, isTop);
 
       cells.push({ q, r, cx, cy, rot, tilt, isTop });
     }
