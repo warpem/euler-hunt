@@ -1,4 +1,11 @@
 import type { ScoreResult } from '../game/scoring';
+import {
+  getPlayerName,
+  submitScore,
+  getLeaderboard,
+  getUid,
+  type LeaderboardEntry,
+} from '../firebase';
 
 export interface ScoreScreenCallbacks {
   onNextLevel(): void;
@@ -106,22 +113,58 @@ function drawFrcCurve(canvas: HTMLCanvasElement, frcCurve: number[], pixelSize: 
   ctx.fillText('1', pad.left - 4, pad.top + 10);
 }
 
+function renderLeaderboardTable(
+  entries: LeaderboardEntry[],
+  myUid: string | null,
+): string {
+  if (entries.length === 0) {
+    return '<p style="color:var(--muted); font-size:13px">No scores yet. Be the first!</p>';
+  }
+  const rows = entries.map((e, i) => {
+    const isMe = e.uid === myUid;
+    const bg = isMe ? 'background:rgba(34,170,102,0.15);' : '';
+    const bold = isMe ? 'font-weight:bold;' : '';
+    return `<tr style="${bg}${bold}">
+      <td style="padding:4px 10px; text-align:center">${i + 1}</td>
+      <td style="padding:4px 10px; text-align:left">${e.name}</td>
+      <td style="padding:4px 10px; text-align:right; font-family:monospace">${e.resolution.toFixed(3)} \u00c5</td>
+    </tr>`;
+  }).join('');
+
+  return `
+    <table style="border-collapse:collapse; width:100%; max-width:360px; font-size:14px">
+      <thead>
+        <tr style="border-bottom:1px solid var(--border); color:var(--muted); font-size:12px">
+          <th style="padding:4px 10px; text-align:center">#</th>
+          <th style="padding:4px 10px; text-align:left">Name</th>
+          <th style="padding:4px 10px; text-align:right">Resolution</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
 export function createScoreScreen(
   container: HTMLElement,
   result: ScoreResult,
   levelName: string,
   hasNextLevel: boolean,
   callbacks: ScoreScreenCallbacks,
+  levelSlug: string | null,
 ): void {
   const stars = '\u2605'.repeat(result.stars) + '\u2606'.repeat(3 - result.stars);
   const resText = result.resolutionAngstrom === Infinity
     ? 'No resolution'
     : `${result.resolutionAngstrom.toFixed(1)} \u00c5`;
 
+  const canSubmit = levelSlug !== null && result.stars > 0;
+  const savedName = getPlayerName() ?? '';
+
   container.innerHTML = `
     <div style="
       display:flex; flex-direction:column; align-items:center; justify-content:center;
-      min-height:80vh; text-align:center;
+      min-height:80vh; text-align:center; padding:24px 16px;
     ">
       <h2 style="margin-bottom:8px">${levelName}</h2>
       <div style="font-size:48px; margin:16px 0">${stars}</div>
@@ -129,6 +172,22 @@ export function createScoreScreen(
         Resolution at FRC=0.5: <strong style="color:var(--fg)">${resText}</strong>
       </p>
       <canvas id="frcCanvas" width="400" height="220" style="margin-top:16px"></canvas>
+      ${canSubmit ? `
+        <div id="submitSection" style="margin-top:20px; display:flex; align-items:center; gap:8px">
+          <input id="nameInput" type="text" maxlength="8" placeholder="Name" value="${savedName}" style="
+            padding:8px 12px; font-size:14px; width:120px; text-align:center;
+            background:var(--input-bg); color:var(--fg); border:1px solid var(--input-border);
+            border-radius:4px;
+          ">
+          <button id="submitScoreBtn" style="
+            padding:8px 20px; font-size:14px; cursor:pointer;
+            background:var(--btn-primary-bg); color:var(--btn-primary-fg);
+            border:none; border-radius:4px; font-weight:bold;
+          ">Submit</button>
+        </div>
+        <p id="submitStatus" style="color:var(--muted); font-size:12px; min-height:18px; margin-top:4px"></p>
+      ` : ''}
+      <div id="leaderboardArea" style="margin-top:16px; width:100%; display:flex; flex-direction:column; align-items:center"></div>
       <div style="display:flex; gap:12px; margin-top:24px">
         ${hasNextLevel ? `
           <button id="nextLevelBtn" style="
@@ -149,6 +208,45 @@ export function createScoreScreen(
   // Draw FRC curve
   const frcCanvas = document.getElementById('frcCanvas') as HTMLCanvasElement;
   drawFrcCurve(frcCanvas, result.frcCurve, result.pixelSize);
+
+  // Leaderboard submit + display
+  if (canSubmit) {
+    const nameInput = document.getElementById('nameInput') as HTMLInputElement;
+    const submitBtn = document.getElementById('submitScoreBtn')!;
+    const statusEl = document.getElementById('submitStatus')!;
+    const lbArea = document.getElementById('leaderboardArea')!;
+
+    async function showLeaderboard() {
+      try {
+        const entries = await getLeaderboard(levelSlug!);
+        lbArea.innerHTML = renderLeaderboardTable(entries, getUid());
+      } catch {
+        lbArea.innerHTML = '<p style="color:var(--muted); font-size:12px">Could not load leaderboard.</p>';
+      }
+    }
+
+    submitBtn.addEventListener('click', async () => {
+      const name = nameInput.value.trim();
+      if (!name || name.length < 1) {
+        statusEl.textContent = 'Enter a name (1\u20138 characters).';
+        return;
+      }
+      submitBtn.setAttribute('disabled', '');
+      statusEl.textContent = 'Submitting\u2026';
+      try {
+        await submitScore(levelSlug!, name, result.resolutionAngstrom);
+        statusEl.textContent = 'Score submitted!';
+        await showLeaderboard();
+      } catch (e) {
+        statusEl.textContent = 'Submit failed. Try again.';
+        console.error('Score submit error:', e);
+        submitBtn.removeAttribute('disabled');
+      }
+    });
+
+    // Load leaderboard on screen open
+    showLeaderboard();
+  }
 
   if (hasNextLevel) {
     document.getElementById('nextLevelBtn')!.addEventListener('click', callbacks.onNextLevel);

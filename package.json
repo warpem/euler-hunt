@@ -11,6 +11,7 @@
   "dependencies": {
     "@warpem/mrc-parser": "^1.0.0",
     "buffer": "^6.0.3",
+    "firebase": "^12.9.0",
     "ndarray": "^1.0.19",
     "ndarray-fft": "^1.0.3",
     "ndarray-ops": "^1.2.2",

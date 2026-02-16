@@ -1,6 +1,7 @@
 export interface TitleScreenCallbacks {
   onCampaign(): void;
   onFreePlay(): void;
+  onLeaderboard(): void;
 }
 
 export function createTitleScreen(
@@ -47,10 +48,17 @@ export function createTitleScreen(
           border:1px solid rgba(255,255,255,0.3); border-radius:8px;
           font-weight:bold; min-width:200px; backdrop-filter:blur(4px);
         ">Free Play</button>
+        <button id="leaderboardBtn" style="
+          padding:14px 48px; font-size:18px; cursor:pointer;
+          background:rgba(255,255,255,0.15); color:#fff;
+          border:1px solid rgba(255,255,255,0.3); border-radius:8px;
+          font-weight:bold; min-width:200px; backdrop-filter:blur(4px);
+        ">Leaderboard</button>
       </div>
     </div>
   `;
 
   document.getElementById('campaignBtn')!.addEventListener('click', callbacks.onCampaign);
   document.getElementById('freePlayBtn')!.addEventListener('click', callbacks.onFreePlay);
+  document.getElementById('leaderboardBtn')!.addEventListener('click', callbacks.onLeaderboard);
 }

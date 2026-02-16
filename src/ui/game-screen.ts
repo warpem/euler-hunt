@@ -13,6 +13,7 @@ import { computeScore, type ScoreResult } from '../game/scoring';
 import { createHemisphereDisc } from './hemisphere-disc';
 import { createPsiRing } from './psi-ring';
 import { SUBDIVISION_STEPS, type LevelConfig } from '../game/campaign';
+import { startTutorial, isFirstPlay } from './tutorial';
 
 export interface GameScreenCallbacks {
   onSubmit(result: ScoreResult): void;
@@ -63,6 +64,7 @@ export async function createGameScreen(
   container: HTMLElement,
   levelConfig: LevelConfig,
   callbacks: GameScreenCallbacks,
+  isCampaign = false,
 ): Promise<void> {
   // Compute responsive canvas sizes
   const vw = window.innerWidth;
@@ -155,7 +157,7 @@ export async function createGameScreen(
           background:var(--btn-secondary-bg); color:var(--btn-secondary-fg);
           border:none; border-radius:6px; font-weight:bold;
         ">\u2190 Menu</button>
-        <div style="display:flex; gap:12px">
+        <div style="display:flex; gap:12px; align-items:center">
           <button id="subdivideBtn" style="
             padding:10px 32px; font-size:16px; cursor:pointer;
             border:none; border-radius:6px; font-weight:bold;
@@ -164,6 +166,11 @@ export async function createGameScreen(
             padding:10px 32px; font-size:16px; cursor:pointer;
             border:none; border-radius:6px; font-weight:bold;
           ">Submit</button>
+          <button id="helpBtn" title="Tutorial" style="
+            padding:6px 12px; font-size:16px; cursor:pointer;
+            background:var(--btn-secondary-bg); color:var(--btn-secondary-fg);
+            border:none; border-radius:6px; font-weight:bold; line-height:1;
+          ">?</button>
         </div>
       </div>
     </div>
@@ -444,6 +451,14 @@ export async function createGameScreen(
   // Show game, hide loading
   loadingOverlay.style.display = 'none';
   gameContent.style.display = '';
+
+  // Help button
+  document.getElementById('helpBtn')!.addEventListener('click', startTutorial);
+
+  // Auto-start tutorial on first campaign play
+  if (isCampaign && isFirstPlay()) {
+    setTimeout(startTutorial, 300);
+  }
 
   // Start fade animation loop if memory fade is active
   if (levelConfig.fadeHalfLife !== null) fadeLoop();
