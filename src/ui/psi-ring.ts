@@ -201,11 +201,14 @@ export function createPsiRing(
       mctx.closePath();
 
       if (ncc !== undefined && hasRange) {
-        const norm = (ncc - state.nccMin) / range;
-        mctx.fillStyle = nccColor(norm);
-        mctx.globalAlpha = 0.8;
-        mctx.fill();
-        mctx.globalAlpha = 1.0;
+        const fadeAlpha = state.currentCell ? state.getPsiFadeAlpha(state.currentCell, psiDeg) : 1;
+        if (fadeAlpha >= 0.05) {
+          const norm = (ncc - state.nccMin) / range;
+          mctx.fillStyle = nccColor(norm);
+          mctx.globalAlpha = 0.8 * fadeAlpha;
+          mctx.fill();
+          mctx.globalAlpha = 1.0;
+        }
       }
 
       if (isSelected) {
@@ -283,11 +286,14 @@ export function createPsiRing(
       ctx.closePath();
 
       if (ncc !== undefined && hasRange) {
-        const norm = (ncc - state.nccMin) / range;
-        ctx.fillStyle = nccColor(norm);
-        ctx.globalAlpha = 0.8;
-        ctx.fill();
-        ctx.globalAlpha = 1.0;
+        const fadeAlpha = state.currentCell ? state.getPsiFadeAlpha(state.currentCell, psiDeg) : 1;
+        if (fadeAlpha >= 0.05) {
+          const norm = (ncc - state.nccMin) / range;
+          ctx.fillStyle = nccColor(norm);
+          ctx.globalAlpha = 0.8 * fadeAlpha;
+          ctx.fill();
+          ctx.globalAlpha = 1.0;
+        }
       }
 
       if (isSelected) {

@@ -184,8 +184,8 @@ export async function createGameScreen(
   const backToMenuBtn = document.getElementById('backToMenuBtn') as HTMLButtonElement;
   const mobileBackBtn = document.getElementById('mobileBackBtn') as HTMLButtonElement;
 
-  backToMenuBtn.addEventListener('click', () => callbacks.onBack());
-  mobileBackBtn.addEventListener('click', () => callbacks.onBack());
+  backToMenuBtn.addEventListener('click', () => { stopFadeLoop(); callbacks.onBack(); });
+  mobileBackBtn.addEventListener('click', () => { stopFadeLoop(); callbacks.onBack(); });
 
   // Load volume
   loadingStatus.textContent = 'Loading volume...';
@@ -241,7 +241,7 @@ export async function createGameScreen(
   }
 
   // Initialize game state with continuous target angles
-  const state = new GameState(target.rot, target.tilt, target.psiDeg);
+  const state = new GameState(target.rot, target.tilt, target.psiDeg, levelConfig.fadeHalfLife);
 
   // Mutable references to current widgets (rebuilt on subdivide)
   let topDisc = createHemisphereDisc(topDiscEl, state.currentStep.angularSpacingDeg, true, levelConfig.symmetry, state, {
@@ -354,6 +354,17 @@ export async function createGameScreen(
     psiRing.redraw();
   }
 
+  // Continuous animation loop for memory fade
+  let fadeRafId = 0;
+  function fadeLoop() {
+    state.refreshFadeRange();
+    redrawAll();
+    fadeRafId = requestAnimationFrame(fadeLoop);
+  }
+  function stopFadeLoop() {
+    if (fadeRafId) { cancelAnimationFrame(fadeRafId); fadeRafId = 0; }
+  }
+
   // Subdivide button handler
   subdivideBtn.addEventListener('click', () => {
     if (!state.canSubdivide) return;
@@ -415,6 +426,7 @@ export async function createGameScreen(
       workingPixelSize,
     );
 
+    stopFadeLoop();
     callbacks.onSubmit(result);
   });
 
@@ -432,4 +444,7 @@ export async function createGameScreen(
   // Show game, hide loading
   loadingOverlay.style.display = 'none';
   gameContent.style.display = '';
+
+  // Start fade animation loop if memory fade is active
+  if (levelConfig.fadeHalfLife !== null) fadeLoop();
 }

@@ -1,8 +1,9 @@
 export interface LevelConfig {
   name: string;
   symmetry: string;
-  defocus: number | null;  // μm, null = no CTF
-  snr: number | null;      // null = no noise
+  defocus: number | null;      // μm, null = no CTF
+  snr: number | null;          // null = no noise
+  fadeHalfLife: number | null;  // seconds, null = no memory fade
   mapUrl: string;
 }
 
@@ -25,6 +26,7 @@ export const campaignLevels: LevelConfig[] = [
     symmetry: 'O',
     defocus: null,
     snr: null,
+    fadeHalfLife: null,
     mapUrl: `${base}emd_51612_apoferritin_128.mrc`,
   },
   {
@@ -32,6 +34,7 @@ export const campaignLevels: LevelConfig[] = [
     symmetry: 'D7',
     defocus: 4.0,
     snr: null,
+    fadeHalfLife: null,
     mapUrl: `${base}emd_31310_groel_128.mrc`,
   },
   {
@@ -39,6 +42,7 @@ export const campaignLevels: LevelConfig[] = [
     symmetry: 'D2',
     defocus: 3.0,
     snr: 0.8,
+    fadeHalfLife: null,
     mapUrl: `${base}emd_72471_galactosidase_128.mrc`,
   },
   {
@@ -46,6 +50,7 @@ export const campaignLevels: LevelConfig[] = [
     symmetry: 'C1',
     defocus: 2.0,
     snr: 0.3,
+    fadeHalfLife: null,
     mapUrl: `${base}80S_128.mrc`,
   },
   {
@@ -53,6 +58,7 @@ export const campaignLevels: LevelConfig[] = [
     symmetry: 'C4',
     defocus: 1.0,
     snr: 0.1,
+    fadeHalfLife: 1.0,
     mapUrl: `${base}emd_44645_trpv3_128.mrc`,
   },
 ];

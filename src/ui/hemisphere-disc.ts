@@ -224,11 +224,12 @@ export function createHemisphereDisc(
         hoveredCell.r === cell.r;
 
       const bestNcc = state.getBestNccForCell(cell);
+      const fadeAlpha = state.getCellFadeAlpha(cell);
 
-      if (bestNcc !== null && hasRange) {
+      if (bestNcc !== null && hasRange && fadeAlpha >= 0.05) {
         const norm = (bestNcc - state.nccMin) / range;
         ctx.fillStyle = nccColor(norm);
-        ctx.globalAlpha = 0.8;
+        ctx.globalAlpha = 0.8 * fadeAlpha;
         ctx.fill();
         ctx.globalAlpha = 1.0;
       } else if (isHovered) {

@@ -52,14 +52,23 @@ export class GameState {
   nccMin = Infinity;
   nccMax = -Infinity;
 
+  /** Memory fade half-life in seconds (null = no fade) */
+  fadeHalfLife: number | null;
+
+  /** Timestamps for exponential fade (parallel to explored / bestPerCell) */
+  private exploredAt = new Map<string, number>();
+  private cellExploredAt = new Map<string, number>();
+
   constructor(
     targetRot: number,
     targetTilt: number,
     targetPsiDeg: number,
+    fadeHalfLife: number | null = null,
   ) {
     this.targetRot = targetRot;
     this.targetTilt = targetTilt;
     this.targetPsiDeg = targetPsiDeg;
+    this.fadeHalfLife = fadeHalfLife;
   }
 
   /** Current subdivision step configuration */
@@ -91,6 +100,8 @@ export class GameState {
     // Fresh start at the new resolution
     this.explored.clear();
     this.bestPerCell.clear();
+    this.exploredAt.clear();
+    this.cellExploredAt.clear();
     this.nccMin = Infinity;
     this.nccMax = -Infinity;
 
@@ -106,6 +117,11 @@ export class GameState {
       tilt: cell.tilt,
       psiDeg,
     });
+
+    // Record timestamps for memory fade
+    const now = performance.now();
+    this.exploredAt.set(key, now);
+    this.cellExploredAt.set(cellKey(cell), now);
 
     // Update best per cell
     const ck = cellKey(cell);
@@ -139,5 +155,42 @@ export class GameState {
   /** Check if any exploration has been done */
   get hasExplored(): boolean {
     return this.explored.size > 0;
+  }
+
+  /** Exponential fade alpha for a cell (best-of-all-psi view). Returns 1 if no fade. */
+  getCellFadeAlpha(cell: HexCell): number {
+    if (this.fadeHalfLife === null) return 1;
+    const t = this.cellExploredAt.get(cellKey(cell));
+    if (t === undefined) return 1;
+    const elapsed = (performance.now() - t) / 1000;
+    return Math.pow(0.5, elapsed / this.fadeHalfLife);
+  }
+
+  /** Recompute nccMin/nccMax excluding entries faded below threshold. */
+  refreshFadeRange(): void {
+    if (this.fadeHalfLife === null) return;
+    const now = performance.now();
+    let min = Infinity;
+    let max = -Infinity;
+    for (const [key, entry] of this.explored) {
+      const t = this.exploredAt.get(key);
+      if (t !== undefined) {
+        const elapsed = (now - t) / 1000;
+        if (Math.pow(0.5, elapsed / this.fadeHalfLife) < 0.05) continue;
+      }
+      if (entry.ncc < min) min = entry.ncc;
+      if (entry.ncc > max) max = entry.ncc;
+    }
+    this.nccMin = min;
+    this.nccMax = max;
+  }
+
+  /** Exponential fade alpha for a specific cell+psi. Returns 1 if no fade. */
+  getPsiFadeAlpha(cell: HexCell, psiDeg: number): number {
+    if (this.fadeHalfLife === null) return 1;
+    const t = this.exploredAt.get(psiKey(cell, psiDeg));
+    if (t === undefined) return 1;
+    const elapsed = (performance.now() - t) / 1000;
+    return Math.pow(0.5, elapsed / this.fadeHalfLife);
   }
 }

@@ -52,6 +52,12 @@ export function createFreePlaySetup(
         </label>
         <input type="range" id="snr" min="0.01" max="1" step="0.01" value="0.1"
           style="display:block; width:100%">
+        <label style="display:flex; align-items:center; gap:8px">
+          <input type="checkbox" id="fadeToggle">
+          Memory Fade — Half-life: <span id="fadeVal">3.0</span>s
+        </label>
+        <input type="range" id="fadeSlider" min="0.5" max="10" step="0.5" value="3" disabled
+          style="display:block; width:100%; opacity:0.35">
       </div>
       <div style="display:flex; gap:12px; margin-top:24px">
         <button id="startBtn" style="
@@ -79,8 +85,13 @@ export function createFreePlaySetup(
   const defocusVal = document.getElementById('defocusVal')!;
   const statusEl = document.getElementById('fpStatus')!;
 
+  const fadeToggle = document.getElementById('fadeToggle') as HTMLInputElement;
+  const fadeSlider = document.getElementById('fadeSlider') as HTMLInputElement;
+  const fadeVal = document.getElementById('fadeVal')!;
+
   snrSlider.addEventListener('input', () => { snrVal.textContent = snrSlider.value; });
   defocusSlider.addEventListener('input', () => { defocusVal.textContent = defocusSlider.value; });
+  fadeSlider.addEventListener('input', () => { fadeVal.textContent = fadeSlider.value; });
 
   ctfToggle.addEventListener('change', () => {
     defocusSlider.disabled = !ctfToggle.checked;
@@ -89,6 +100,10 @@ export function createFreePlaySetup(
   noiseToggle.addEventListener('change', () => {
     snrSlider.disabled = !noiseToggle.checked;
     snrSlider.style.opacity = noiseToggle.checked ? '1' : '0.35';
+  });
+  fadeToggle.addEventListener('change', () => {
+    fadeSlider.disabled = !fadeToggle.checked;
+    fadeSlider.style.opacity = fadeToggle.checked ? '1' : '0.35';
   });
 
   document.getElementById('startBtn')!.addEventListener('click', () => {
@@ -105,6 +120,7 @@ export function createFreePlaySetup(
       symmetry: symmetry.value,
       defocus: ctfToggle.checked ? parseFloat(defocusSlider.value) : null,
       snr: noiseToggle.checked ? parseFloat(snrSlider.value) : null,
+      fadeHalfLife: fadeToggle.checked ? parseFloat(fadeSlider.value) : null,
       mapUrl: url,
     };
 
